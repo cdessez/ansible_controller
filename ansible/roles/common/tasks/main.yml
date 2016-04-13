@@ -1,0 +1,49 @@
+---
+
+- name: Install APT proxy if necessary
+  when: "{{ apt_80proxy }}"
+  command: "echo 'Acquire:http:Proxy \"{{ apt_80proxy }}\"' > /etc/apt/apt.conf.d/80proxy"
+
+- name: Install base packages
+  apt: name="{{ item }}" update_cache=yes
+  become: yes
+  with_items:
+    - zsh
+    - bash
+    - python
+    - ipython
+    - screen
+    - vim
+    - telnet
+    - tcpdump
+    - wget
+    - curl
+    - iftop
+    - htop
+    - iproute
+    - less
+    - grep
+    - cron
+    - net-tools
+    - zip
+    - tar
+    - bzip2
+
+- name: Set dotfiles for root user
+  include: dotfiles_root.yml
+  become: yes
+
+- name: Set dotfiles for current user
+  include: dotfiles.yml
+
+- name: Change shell for current user
+  become: yes
+  when: accepted_shells[preferred_shell] is defined
+  user: name='{{ username }}'
+        shell='{{ accepted_shells[preferred_shell].path }}'
+
+- name: Change shell for root user
+  become: yes
+  when: accepted_shells[preferred_shell] is defined
+  user: name='root'
+        shell='{{ accepted_shells[preferred_shell].path }}'

@@ -1,0 +1,41 @@
+---
+
+- name: Set bashrc for root user
+  become: true
+  copy: src=".bashrc"
+        dest="/root/.bashrc"
+
+- name: Edit root bashrc file for red prompt
+  become: true
+  lineinfile: dest="/root/.bashrc"
+              regexp="### MARKER COLOR PROMPT LINE"
+              line="    PS1='${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '    {{ '###' }} MARKER COLOR PROMPT LINE"
+
+- name: Set bash_logout for root user
+  become: true
+  copy: src=".bash_logout"
+        dest="/root/.bash_logout"
+
+- name: Set .profile for root user
+  become: true
+  copy: src=".profile"
+        dest="/root/.profile"
+
+- name: Set screenrc for root user
+  become: true
+  copy: src=".screenrc"
+        dest="/root/.screenrc"
+
+- name: Set vimrc for root user
+  become: true
+  copy: src=".vimrc"
+        dest="/root/.vimrc"
+
+- name: Set zshrc for root user
+  become: true
+  copy: src=".zshrc"
+        dest="/root/.zshrc"
+
+- name: Copy .shell library
+  copy: src="shell/"
+        dest="/root/.shell"

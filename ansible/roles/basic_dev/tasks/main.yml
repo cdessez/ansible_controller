@@ -1,0 +1,19 @@
+---
+
+- name: Install basic dev packages
+  apt: name="{{ item }}" update_cache=yes
+  become: yes
+  with_items:
+    - git
+    - zip
+    - python
+    - python-dev
+    - python-pip
+    - vim
+    - telnet
+    - perl
+
+- name: Configure Git
+  template:
+    src=gitconfig.j2
+    dest='/home/{{ username }}/.gitconfig'

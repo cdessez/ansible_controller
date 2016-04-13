@@ -1,0 +1,16 @@
+---
+
+- name: Create main user
+  hosts: generic-servers
+  remote_user: root
+
+  roles:
+    - main_user
+
+
+- name: Install stuff
+  hosts: generic-servers
+  remote_user: root
+
+  roles:
+    -  basic_dev

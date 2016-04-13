@@ -1,1 +1,7 @@
 .idea/
+.vagrant/
+vagrant_machines
+hosts
+ansible/group_vars/*
+ansible/host_vars/*
+ansible/*.retry

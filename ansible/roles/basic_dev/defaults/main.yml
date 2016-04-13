@@ -1,0 +1,24 @@
+---
+
+git_config:
+  user:
+    name: Cedric Dessez
+    email: cedric@dessez.fr
+  color:
+    branch: auto
+    diff: auto
+    interactive: auto
+    status: auto
+    ui: auto
+  core:
+    editor: vim
+  alias:
+    clo: clone
+    co: checkout
+    st: status
+    pur: pull --rebase
+    ci: commit
+    rc: rebase --continue
+    lg: log -M --decorate --graph --oneline
+    br: branch
+    sth: stash

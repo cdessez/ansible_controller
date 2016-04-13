@@ -1,0 +1,481 @@
+#!/bin/sh
+#
+# Copyright (c) 2014-2016 Nicolas Iooss
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+#
+# Define useful shell functions
+
+# mkdir && cd
+mcd() {
+    # shellcheck disable=SC2164
+    mkdir -p "$1" && cd "$1"
+}
+
+# cd && ls
+cl() {
+    cd "$1" && shift && ls "$@"
+}
+
+# Find broken symlinks
+if find --help 2> /dev/null |grep -q -- -xtype ; then
+    find_broken() {
+        find "$@" -xtype l -print
+    }
+else
+    find_broken() {
+        # shellcheck disable=SC2039
+        find "$@" -type l ! -exec test -e {} \; -print
+    }
+fi
+
+# Find empty directories
+find_empty() {
+    find "$@" -type d -empty -print
+}
+
+# Compute size of subdirectories and sort them
+dus() {
+    du -h "$@" | sort -h
+}
+du1s() {
+    du -h --max-depth=1 "$@" | sort -h
+}
+du2s() {
+    du -h --max-depth=2 "$@" | sort -h
+}
+
+# Read passwords. Zsh uses "?prompt" option to display a prompt and other
+# shells (Bash, Ash, ...) use -p option, so use echo to be compatible.
+# Dash fails with "read: Illegal option -s" as this is not POSIX-compliant.
+read_pass() {
+    # shellcheck disable=SC2039
+    printf >&2 'Password: ' && read -r -s "$@" && echo ''
+}
+
+# Generate random passwords from kernel random number generator
+# see also: openssl rand -base64 16
+gen_pass() {
+    # This consumes a lot of random bits, so uses non-blocking urandom and
+    # keeps only non-so-special symbols
+    tr -cd '0-9a-zA-Z!%&*+,\-./?@^_' < /dev/urandom | head -c"${1:-16}"
+    echo ''
+}
+gen_pass_asc() {
+    # Like gen_pass but keeps all ASCII characters.
+    tr -cd '!#$%&()*+,\-./0-9:;<=>?@A-Z[\\]^_a-z{|}' < /dev/urandom | head -c"${1:-16}"
+    echo ''
+}
+gen_pass_alnum() {
+    # This consume few random bits, so use blocking /dev/random
+    # $1 bytes produces ($1 * 4 / 3) base64-character, cut to $1 after dropping
+    # non-alphanum symbols.
+    head -c"${1:-16}" < /dev/random | base64 -w0 | tr -d '/+=' | head -c"${1:-16}"
+    echo ''
+}
+show_entropy() {
+    cat /proc/sys/kernel/random/entropy_avail
+}
+
+# Log tail, to have colors when ccze is available
+# shellcheck disable=SC2039
+if which ccze > /dev/null 2>&1 ; then
+    ltail() {
+        tail "$@" |ccze -A
+    }
+elif type alias > /dev/null 2>&1 ; then
+    alias ltail=tail
+else
+    ltail() {
+        tail "$@"
+    }
+fi
+
+# Convert timestamps from Epoch to dates
+epoch2date() {
+    if [ $# -ge 1 ] ; then
+        while [ $# -ge 1 ] ; do
+            date "--date=@$1"
+            shift
+        done
+    else
+        echo >&2 "Usage: epoch2date TIMESTAMP [...]"
+    fi
+}
+epoch2utc() {
+    if [ $# -ge 1 ] ; then
+        while [ $# -ge 1 ] ; do
+            date -u "--date=@$1"
+            shift
+        done
+    else
+        echo >&2 "Usage: epoch2utc TIMESTAMP [...]"
+    fi
+}
+# Get the number of seconds since Epoch
+date_epoch() {
+    date '+%s'
+}
+# Dump the local timezone file
+tzdump() {
+    if [ $# -ge 1 ] ; then
+        while [ $# -ge 1 ] ; do
+            if [ -r "/usr/share/zoneinfo/$1" ] ; then
+                zdump -v "/usr/share/zoneinfo/$1"
+            else
+                echo >&2 "Unknown zone info $1."
+                return 1
+            fi
+            shift
+        done
+    elif [ -L /etc/localtime ] ; then
+        zdump -v "$(readlink -f /etc/localtime)"
+    elif [ -r /etc/localtime ] ; then
+        zdump -v /etc/localtime
+    else
+        zdump -v /usr/share/zoneinfo/UTC
+    fi | sed 's,^/usr/share/zoneinfo/,,'
+}
+
+# Retrieve HTTPS certificate of a website
+get_https_cert() {
+    openssl s_client -servername "$1" -connect "$1:443" < /dev/null \
+         -showcerts | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p'
+}
+
+# Check the DANE configuration for a HTTPS website (cert and TLSA DNS record)
+# To get a TLS record, use something like:
+#   dig TLSA _443._tcp.good.dane.verisignlabs.com
+check_https_dane() {
+    gnutls-cli --dane --ca-verification --ocsp --port 443 "$1" < /dev/null
+}
+
+# Combine postcat with less
+postless() {
+    local DIR OUTPUT STATUS
+    if [ $# -eq 1 ] && ! [ -e "$1" ] ; then
+        # Find message by ID in Postfix spool
+        for DIR in /var/spool/postfix/* /var/spool/postfix/*/* ; do
+            [ -d "$DIR" ] || continue
+            # Avoid the defer folder which contains text files
+            [ "${DIR%/*}" != "/var/spool/postfix/defer" ] || continue
+            if [ -e "$DIR/$1" ] ; then
+                set "$DIR/$1"
+                break
+            fi
+        done
+    fi
+    OUTPUT="$(postcat "$@")"
+    STATUS=$?
+    # Use less only if postcat succeded
+    if [ "$STATUS" -eq 0 ] ; then
+        echo "$OUTPUT" |less
+    else
+        echo "$OUTPUT"
+        return $STATUS
+    fi
+}
+
+# Highlight a pattern, if grep accept colors
+if grep --help 2> /dev/null |grep -q -- --color ; then
+    if [ -n "$BASH_VERSION" ] || [ -n "$ZSH_VERSION" ] ; then
+        # Modern shells support array substitution
+        hl() {
+            \grep -E --color=always -e '' "${@/#/-e}"
+        }
+    else
+        # Same function, with a temporary file
+        hl() {
+            local FILE
+            FILE="$(mktemp)"
+            # shellcheck disable=SC2064
+            trap "/bin/rm -f \"$FILE\"" EXIT HUP INT QUIT TERM
+            while [ $# -ge 1 ] ; do
+                echo "$1" >> "$FILE"
+                shift
+            done
+            \grep -E --color=always -e '' -f "$FILE"
+            /bin/rm "$FILE"
+        }
+    fi
+fi
+
+# Escape control characters when cat'ing binary streams to a TTY
+# Automaticaly add -v (for --show-nonprinting) to cat parameters.
+# This is known to be incompatible with busybox cat, which is detected by
+# testing wether /bin/cat is a symbolic link.
+protected_cat() {
+    python -c \
+        'import os,sys;a=sys.argv;os.execv(a[1],["cat","-v"][:1+sys.stdout.isatty()]+a[2:])' \
+        "$@"
+}
+if [ -x /usr/bin/python ] || which python > /dev/null 2>&1 ; then
+    if [ -x /usr/bin/cat ] ; then
+        if ! [ -L /usr/bin/cat ] ; then
+            cat() {
+                protected_cat /usr/bin/cat "$@"
+            }
+        fi
+    elif [ -x /bin/cat ] ; then
+        if ! [ -L /bin/cat ] ; then
+            cat() {
+                protected_cat /bin/cat "$@"
+            }
+        fi
+    fi
+fi
+
+# Enhance the output of "mount" by aligning columns.
+# "findmnt" from util-linux project produces nicer output.
+mounttable() {
+    mount | LC_ALL=C sort -k3 | column -t
+}
+
+# Print args or use standard input (mainly for internal use)
+print_args_or_stdin() {
+    if [ $# -eq 0 ] || [ "$1" = "-" ] ; then
+        cat
+    else
+        while [ $# -ge 1 ] ; do
+            echo "$1"
+            shift
+        done
+    fi
+}
+
+# Reverse hex string and dump it
+if which xxd > /dev/null 2>&1 ; then
+    revhex() {
+        print_args_or_stdin "$@" | xxd -p -r | xxd
+    }
+fi
+
+# Reverse base64 and dump with "hexa" alias
+# shellcheck disable=SC2039
+if type alias > /dev/null 2>&1 ; then
+    base6416() {
+        print_args_or_stdin "$@" | base64 -d | hexa
+    }
+fi
+
+# Convert decimal to hexadecimal and vice-versa
+dechex() {
+    (echo 'obase=16' ; print_args_or_stdin "$@") | bc -q | tr 'A-F' 'a-f'
+}
+hexdec() {
+    (echo 'ibase=16' ; (print_args_or_stdin "$@" | tr 'a-f' 'A-F')) | bc -q
+}
+
+# Recursive md5sum, sha1sum, sha256sum... in directories
+md5sumd() {
+    # shellcheck disable=SC2039
+    find "$@" -type f -exec md5sum {} +
+}
+sha1sumd() {
+    # shellcheck disable=SC2039
+    find "$@" -type f -exec sha1sum {} +
+}
+sha224sumd() {
+    # shellcheck disable=SC2039
+    find "$@" -type f -exec sha224sum {} +
+}
+sha256sumd() {
+    # shellcheck disable=SC2039
+    find "$@" -type f -exec sha256sum {} +
+}
+sha384sumd() {
+    # shellcheck disable=SC2039
+    find "$@" -type f -exec sha384sum {} +
+}
+sha512sumd() {
+    # shellcheck disable=SC2039
+    find "$@" -type f -exec sha512sum {} +
+}
+
+# Sort domain names by their subdomains
+dnssort() {
+    # Reverse dot-separated components
+    sed '/\n/!G;s/\([^.]*\)\.\(.*\n\)/&\2.\1/;//D;s/\n//' | \
+        sort "$@" | \
+        sed '/\n/!G;s/\([^.]*\)\.\(.*\n\)/&\2.\1/;//D;s/\n//'
+}
+
+# Sort IPv4 addresses
+ipv4sort() {
+    sort -n -t . -k 1,1 -k 2,2 -k 3,3 -k 4,4 "$@"
+}
+
+# Some X-Window functions
+xwinlist() {
+    xwininfo -root -tree
+}
+xwinpid() {
+    xprop _NET_WM_PID | sed 's/.*= *//'
+}
+
+# Use webcam with mplayer
+mplayer_webcam() {
+    mplayer tv:// -tv driver=v4l2:device=/dev/video0:width=640:height=480
+}
+
+# Trace process executions
+strace_exec() {
+    local SYSCALLS
+    SYSCALLS='execve'
+    # Trace execveat if it is known by strace
+    if strace -qq -e execveat true 2> /dev/null
+    then
+        SYSCALLS="$SYSCALLS,execveat"
+    fi
+    # Run the program without modifying its stdin/out/err streams
+    ( \
+        ( \
+            strace -s 65536 -e "$SYSCALLS" -e signal=none -o /proc/self/fd/3 \
+                -f "$@" >&4 \
+        ) 3>&1 | \
+        \grep -v >&2 \
+            -e '^[0-9]\+ \+execve\(at\)\?(.*) = -1 ENOENT ([^)]*)$' \
+            -e '^[0-9]\+ \++++ exited with [0-9]\+ +++$' \
+    ) 4>&1
+}
+
+# Find the package which provides an installed command
+if [ -x /usr/bin/which ] ; then
+    if [ -x /sbin/apk ] ; then
+        # Alpine Linux
+        whichpkg() {
+            /usr/bin/which "$@" | xargs apk info --who-owns
+        }
+    elif [ -x /usr/bin/pacman ] ; then
+        # Arch Linux
+        whichpkg() {
+            /usr/bin/which "$@" | xargs pacman -Q --owns
+        }
+    elif [ -x /usr/bin/dpkg ] ; then
+        # Debian
+        whichpkg() {
+            /usr/bin/which "$@" | xargs dpkg --search
+        }
+    elif [ -x /usr/bin/qfile ] ; then
+        # Gentoo
+        whichpkg() {
+            /usr/bin/which "$@" | xargs qfile
+        }
+    elif [ -x /bin/rpm ] ||  [ -x /usr/bin/rpm ] ; then
+        # Redhat
+        whichpkg() {
+            /usr/bin/which "$@" | xargs rpm -q --file
+        }
+    fi
+fi
+
+# Edit the list of ignored files in SVN (takes a directory as parameter)
+svn_editign() {
+    if [ $# = 0 ] ; then
+        # Use current directory by default
+        set .
+    fi
+    svn propedit svn:ignore "$@"
+}
+
+# Create an archive from the current git repository to the given path
+gitarc() {
+    local ARCPATH ARCFILE FORMAT
+    ARCPATH="$1"
+    if [ -z "$ARCPATH" ] ; then
+        ARCPATH="$(git rev-parse --show-toplevel).tar.gz"
+        if [ -z "$ARCPATH" ] ; then
+            echo >&2 "Unable to build a path to created archive"
+            return 1
+        fi
+        echo >&2 "Creating archive in $ARCPATH"
+    fi
+    ARCFILE="${ARCPATH##*/}"
+    case "$ARCFILE" in
+        *.tar)
+            FORMAT=tar
+            ;;
+        *.tar.gz)
+            FORMAT=tar.gz
+            ;;
+        *.tar.xz)
+            FORMAT=tar.xz
+            ;;
+        *.tgz)
+            FORMAT=tgz
+            ;;
+        *.zip)
+            FORMAT=zip
+            ;;
+        *)
+            echo >&2 "Unknown file type for $ARCFILE"
+            return 1
+    esac
+    git -C "$(git rev-parse --show-toplevel)" archive \
+        --format="$FORMAT" --output="$ARCPATH" \
+        --prefix="${ARCFILE%.$FORMAT}/" HEAD
+}
+
+# Override objdump to write stdin to a temporary file if no file is provided in
+# the arguments, because objdump only operated on regular files.
+objdump_wrapper() {
+    local ARG RETVAL TARGET TEMPFILE
+    TARGET="$1"
+    shift
+    for ARG in "$@"
+    do
+        if [ "${ARG#-}" = "$ARG" ] || [ "$ARG" = "--" ]
+        then
+            # ARG begins with a dash or is -- indicated there is a file
+            "$TARGET" "$@"
+            return $?
+        fi
+    done
+
+    # There is no file, let's create one
+    TEMPFILE="$(mktemp /tmp/objdump.XXXXXXXXXX)"
+    # shellcheck disable=SC2064
+    trap "/bin/rm -f \"$TEMPFILE\"" EXIT HUP INT QUIT TERM
+    cat > "$TEMPFILE"
+    "$TARGET" "$@" "$TEMPFILE"
+    RETVAL=$?
+    /bin/rm -f "$TEMPFILE"
+    return $RETVAL
+}
+
+# Use aliases if available, and because dash are allowed in their names
+# shellcheck disable=SC2039
+if type alias > /dev/null 2>&1 ; then
+    alias objdump='objdump_wrapper /usr/bin/objdump'
+    alias arm-none-eabi-objdump='objdump_wrapper /usr/bin/arm-none-eabi-objdump'
+else
+    objdump() {
+        objdump_wrapper /usr/bin/objdump "$@"
+    }
+fi
+
+# Use Google Translate to speak, when espeak is not installed
+# Source: https://twitter.com/climagic/status/580751523048734720
+googlesay() {
+    curl -s \
+        -A 'Mozilla/5.0 (Linux; U; Android; en-us) AppleWebKit/999+ (KHTML, like Gecko) Safari/999.9' \
+        'https://translate.google.com/translate_tts' \
+        -d "tl=en&q=$*" | \
+    mpg123 -q -
+}

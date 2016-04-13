@@ -1,0 +1,30 @@
+---
+
+- name: Set bashrc for current user
+  copy: src=".bashrc"
+        dest="/home/{{ username }}/.bashrc"
+
+- name: Set bash_logout for current user
+  copy: src=".bash_logout"
+        dest="/home/{{ username }}/.bash_logout"
+
+- name: Set .profile for current user
+  copy: src=".profile"
+        dest="/home/{{ username }}/.profile"
+
+- name: Set screenrc for current user
+  copy: src=".screenrc"
+        dest="/home/{{ username }}/.screenrc"
+
+- name: Set vimrc for current user
+  copy: src=".vimrc"
+        dest="/home/{{ username }}/.vimrc"
+
+- name: Set zshrc for current user
+  copy: src=".zshrc"
+        dest="/home/{{ username }}/.zshrc"
+
+- name: Copy .shell library
+  copy: src="shell/"
+        dest="/home/{{ username }}/.shell"
+

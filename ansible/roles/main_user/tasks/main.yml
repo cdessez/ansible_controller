@@ -1,0 +1,15 @@
+---
+
+- name: Create user
+  user: name='{{ username }}'
+        generate_ssh_key=yes
+        append=yes
+        groups=sudo
+        #update_password= on_create
+
+- name: Make it a sudoer (password not required)
+  become: true
+  template: src=sudoersd.j2
+            dest='/etc/sudoers.d/{{ username }}'
+            validate='visudo -cf %s'
+            owner=root group=root mode=0400

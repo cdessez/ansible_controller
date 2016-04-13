@@ -1,0 +1,138 @@
+#!/bin/zsh
+#
+# Copyright (c) 2013-2016 Nicolas Iooss
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+#
+# ZSH completion configuration
+
+# Use custom completion files from ~/.shell/zshcompdev (may be a symlink)
+# This is made to ease development of new completion files, so prevent root
+# from using them if there are not in /root.
+if [ \( "$HOME" = '/root' -o "$UID" != 0 \) -a -d "$HOME/.shell/zshcompdev" ] ; then
+    fpath=("$HOME/.shell/zshcompdev" $fpath)
+fi
+
+# Ask for correction of command names
+setopt CORRECT
+# don't correct other words than command (ie. don't think every argument is a filename)
+setopt NOCORRECT_ALL
+
+# Watch connections
+watch=(notme)
+
+
+# Use modern completion system
+setopt AUTO_LIST # list automatically when multiple choices
+unsetopt MENU_COMPLETE # don't put the first answer
+setopt AUTO_MENU # use tab to navigate between possible completions
+# setopt COMPLETE_ALIASES # allow to define different completion for aliases than for the original command
+setopt AUTO_REMOVE_SLASH # remove trailing slash of completed name if not needed
+setopt COMPLETE_IN_WORD # allow to complete first part of a written name  : cd friz, cursor on i, <tab>  => cd frankiz
+setopt ALWAYS_TO_END # After completion, go to the end of what was completed
+setopt LIST_TYPES # Print * for executables, / for directories, @ for links, ...
+setopt LIST_PACKED # vary column widthes to spare space
+setopt LIST_ROWS_FIRST # put adjacent possibilities in same lines instead of columns
+setopt NO_LIST_BEEP # don't beep when showing a lost of choices
+
+# General info
+zstyle ':completion:*' _all_matches _list _oldlist _menu _expand _complete _match _ignored _correct _approximate _prefix
+zstyle ':completion:*' auto-description 'specify: %d'
+zstyle ':completion:*' completer _expand _complete _ignored _correct _approximate _prefix
+#zstyle ':completion:*' completer _expand _complete _correct _approximate # completer without _history
+zstyle ':completion:*' expand prefix suffix
+zstyle ':completion:*' format 'Completing %d'
+zstyle ':completion:*' group-name '' # group by type of data
+zstyle ':completion:*' ignore-parents parent pwd ..
+zstyle ':completion:*' insert-unambiguous true
+zstyle ':completion:*' list-prompt %SAt %p: Hit TAB for more, or the character to insert%s
+zstyle ':completion:*' list-suffixes true.
+zstyle ':completion:*' max-errors 1 # don't try to correct when more than 1 error
+zstyle ':completion:*' menu select=1 # navigate between options if at least 5
+#zstyle ':completion:*' menu select=long
+zstyle ':completion:*' original false
+zstyle ':completion:*' preserve-prefix '//[^/]##/'
+zstyle ':completion:*' select-prompt %SScrolling active: current selection at %p%s
+zstyle ':completion:*' use-compctl false
+zstyle ':completion:*' verbose true
+
+# Print completion descriptions in bold
+zstyle ':completion:*:descriptions' format '%B%d%b'
+zstyle ':completion:*:messages' format '%d'
+zstyle ':completion:*:warnings' format 'No matches for: %d'
+
+zstyle ':completion:*:-command-' group-order builtins functions commands # modified order of completion for command completion
+zstyle ':completion::complete:*' use-cache 1
+
+# Do not show temp files in completions
+zstyle ':completion:*:files' ignored-patterns '*?.o' '*?~' '*?.dvi' '*?.aux' '*?.swp'
+zstyle ':completion:*:complete:-command-::*' ignored-patterns '*\~'
+
+# Put color everywhere, using LS_COLORS
+eval "$(dircolors -b)"
+zstyle ':completion:*' list-colors ''
+zstyle ':completion:*:default' list-colors "${(s.:.)LS_COLORS}"
+
+# Allow completion for a_b to ami_bak, and idem with a.b and a-b, case-insensitive matching
+zstyle ':completion:*' matcher-list 'm:{[:lower:]}={[:upper:]}' 'm:{[:lower:][:upper:]}={[:upper:][:lower:]}' 'r:|[._-]=* r:|=*'
+
+# "kill" completion, show processes in red
+zstyle ':completion:*:*:*:*:processes*' force-list always
+zstyle ':completion:*:*:kill:*:processes' command 'ps -u "$USER"'
+zstyle ':completion:*:*:kill:*:processes' insert-ids single
+zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([0-9]#)*=0=01;31'
+zstyle ':completion:*:processes-names' command "ps -eo cmd= | sed 's:\([^ ]*\).*:\1:;s:\(/[^ ]*/\)::;/^\[/d'"
+zstyle ':completion:*:*:kill:*' menu yes select
+#zstyle ':completion:*:kill:*' command 'ps -u $USER -o pid,%cpu,tty,cputime,cmd'
+function _pslist() {
+    reply=($(ps -u "$USER" -o pid,user,nice,pcpu,pmem,cputime,tname,start_time,args))
+}
+compctl -K _pslist kill
+
+# Complete SSH hosts with .ssh/config
+[ -r "$HOME/.ssh/config" ] && _ssh_config=($(sed -ne 's/Host[=\t ]//p' "$HOME/.ssh/config")) || _ssh_config=()
+zstyle ':completion:*:hosts' hosts $_ssh_config
+unset _ssh_config
+
+# Man
+zstyle ':completion:*:manuals' separate-sections true
+zstyle ':completion:*:manuals.(^1*)' insert-sections true
+
+autoload -Uz compinit
+compinit
+
+# Complete some programs which don't have proper compdef
+compdef ping6=ping
+compdef _gnu_generic curl file head mv shred touch watch wc zsh
+
+# Complete some functions defined in "functions" file
+compdef cl=cd
+compdef dnssort=sort
+compdef mcd=mkdir
+#compdef postless=postcat
+compdef read_pass=read
+#compdef ltail=tail
+
+# Reload completion
+compreload() {
+    local FCTS
+    FCTS=($(find "$fpath[@]" -name '_*' -not -name '*~' -print))
+    unfunction $FCTS:t 2> /dev/null
+    autoload -Uz $FCTS:t
+}

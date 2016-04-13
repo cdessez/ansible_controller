@@ -1,0 +1,15 @@
+---
+username: cedric
+domain_name: dessez.fr
+apt_80proxy: false
+preferred_shell: 'zsh'
+
+accepted_shells:
+  sh:
+    path: /bin/sh
+  bash:
+    path: /bin/bash
+  zsh:
+    path: /bin/zsh
+  screen:
+    path: /usr/bin/screen

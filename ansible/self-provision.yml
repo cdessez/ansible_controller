@@ -1,0 +1,8 @@
+---
+
+- name: Self provisioning Ansible controller
+  hosts: localhost
+  remote_user: vagrant
+
+  roles:
+  - { role: basic_dev, username: vagrant }

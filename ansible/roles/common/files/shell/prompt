@@ -1,0 +1,92 @@
+#!/bin/sh
+#
+# Copyright (c) 2013-2016 Nicolas Iooss
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+#
+# Prompt
+# Ubuntu monochrome: '\u@\h:\w\$ '
+# Ubuntu with colors: '\[\033[1;32m\]\u@\h\[\033m\]:\[\033[1;34m\]\w\[\033[m\]\$ '
+# Arch default: '[\u@\h \W]\$ '
+# Busybox sh: $
+
+# Color rules:
+# * local root: bold red hostname
+# * remote root: bold red hostname with @
+# * local user: yellow user @ green hostname
+# * remote user: yellow user @ cyan hostname
+# * green for local machine, cyan for remote host
+# * magenta/purple for working directory
+if [ "$(id -u)" -eq 0 ] ; then
+    if [ -z "$SSH_CLIENT" ]; then
+        BASH_PROMPT='\[\e[1;31m\]\h\[\e[m\]'
+        ZSH_PROMPT='%B%F{red}%m%f%b'
+    else
+        BASH_PROMPT='\[\e[1;31m\]@\h\[\e[m\]'
+        ZSH_PROMPT='%B%F{red}@%m%f%b'
+    fi
+else
+    BASH_PROMPT='\[\e[33m\]\u\[\e[m\]@'
+    ZSH_PROMPT='%F{yellow}%n%f@'
+
+    if [ -z "$SSH_CLIENT" ]; then
+        BASH_PROMPT="$BASH_PROMPT"'\[\e[32m\]\h\[\e[m\]'
+        ZSH_PROMPT="$ZSH_PROMPT"'%F{green}%m%f'
+    else
+        BASH_PROMPT="$BASH_PROMPT"'\[\e[36m\]\h\[\e[m\]'
+        ZSH_PROMPT="$ZSH_PROMPT"'%F{cyan}%m%f'
+    fi
+fi
+
+
+if [ -n "$BASH_VERSION" ]; then
+    # Don't forget \[...\] to compute prompt width correctly
+    PS1="$BASH_PROMPT \[\e[35m\]\w\[\e[m\]\\\$ "
+    # Set the title to user@host:dir
+    case "$TERM" in
+        xterm*|rxvt*)
+            PS1="\[\e]0;\u@\h: \w\a\]$PS1"
+            ;;
+    esac
+elif [ -n "$ZSH_VERSION" ]; then
+    PROMPT="$ZSH_PROMPT %F{magenta}%~%f%# "
+    # Display last returned value at the beginning of the prompt
+    PROMPT="%(?..%F{red}[%?]%f )$PROMPT"
+    # Right prompt with date
+    # shellcheck disable=SC2034
+    RPROMPT="%F{cyan}%D{%d/%m} %T%f"
+    # Colorize the spelling correction prompt
+    # shellcheck disable=SC2034
+    SPROMPT='zsh: correct %F{red}%R%f to %F{green}%r%f [nyae]? '
+    # Set window title too
+    case "$TERM" in
+        xterm*|rxvt*)
+            # shellcheck disable=SC2039
+            PROMPT=$'%{\e]0;%n@%m: %~\a%}'"$PROMPT"
+            ;;
+    esac
+elif [ "$(id -u)" -eq 0 ] ; then
+    # Root prompt for ash, dash...
+    PS1=$(hostname -s)'# '
+else
+    # User prompt for ash, dash...
+    PS1=$(id -nu)'@'$(hostname -s)'$ '
+fi
+
+unset BASH_PROMPT ZSH_PROMPT
